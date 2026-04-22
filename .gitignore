@@ -1,0 +1,31 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.tfplan
+terraform.tfstate.d/
+
+# Terraform providers (LARGE FILES)
+.terraform/providers/
+
+# Ansible
+*.retry
+ansible/inventory.yaml
+.ansible/
+
+# SSH Keys
+*.pem
+*.pub
+ssh-keys/
+**/ssh-keys/
+
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+tmp/
