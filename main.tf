@@ -106,7 +106,7 @@ module "control_plane" {
   instance_count     = 1
   environment        = var.environment
 
-tags = {
+  tags = {
     Role = "control-plane"
   }
 }

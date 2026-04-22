@@ -1,5 +1,5 @@
 ---
-- name: Install Cilium CNI 
+- name: Install Cilium CNI with proper DNS configuration
   hosts: control_plane
   become: true
   
@@ -42,7 +42,6 @@
       wait_for:
         timeout: 10
 
-    # NEW: Get control plane IP for Cilium configuration
     - name: Get control plane private IP
       set_fact:
         control_plane_ip: "{{ hostvars['control-plane']['ansible_default_ipv4']['address'] }}"
@@ -61,21 +60,16 @@
         done
         echo "All nodes are visible"
 
-    # FIXED: Complete Cilium installation with k8sServiceHost
-    - name: Install Cilium with COMPLETE configuration
+    - name: Install Cilium
       become_user: ubuntu
       shell: |
         export KUBECONFIG=/home/ubuntu/.kube/config
         cilium install \
           --set kubeProxyReplacement=true \
           --set ipam.mode=kubernetes \
-          --set routingMode=native \
-          --set autoDirectNodeRoutes=true \
-          --set ipv4NativeRoutingCIDR=10.0.0.0/16 \
-          --set bpf.masquerade=true \
-          --set endpointRoutes.enabled=true \
           --set k8sServiceHost={{ control_plane_ip }} \
-          --set k8sServicePort=6443
+          --set k8sServicePort=6443 \
+          --version 1.19.2
       register: cilium_install
 
     - name: Display installation output
@@ -94,16 +88,15 @@
       delay: 10
       until: cilium_status.rc == 0
 
-    # NEW: Validate DNS is working
-    - name: Validate DNS resolution
+    - name: Configure CoreDNS upstream DNS
       become_user: ubuntu
       shell: |
         export KUBECONFIG=/home/ubuntu/.kube/config
-        kubectl run dns-test --image=busybox:1.28 --rm -i --restart=Never -- nslookup kubernetes.default
-      register: dns_test
-      until: dns_test.rc == 0
-      retries: 12
-      delay: 10
+        kubectl wait --for=condition=available deployment/coredns -n kube-system --timeout=120s
+        kubectl get configmap coredns -n kube-system -o yaml | \
+        sed 's|forward . /etc/resolv.conf|forward . 8.8.8.8 8.8.4.4|' | \
+        kubectl apply -f -
+        kubectl delete pods -n kube-system -l k8s-app=kube-dns
       ignore_errors: true
 
     - name: Show cluster nodes
@@ -112,6 +105,7 @@
         export KUBECONFIG=/home/ubuntu/.kube/config
         kubectl get nodes -o wide
       register: nodes_status
+      changed_when: false
 
     - name: Display nodes
       debug:

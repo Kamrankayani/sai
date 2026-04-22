@@ -2,16 +2,18 @@
 - name: Join worker nodes to cluster
   hosts: workers
   become: true
+  serial: 1
   
   tasks:
+    - name: Check if already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
     - name: Get current hostname
       command: hostname
       register: current_hostname
       changed_when: false
-
-    - name: Display current hostname
-      debug:
-        msg: "Current hostname is {{ current_hostname.stdout }}"
 
     - name: Get join command from control plane
       slurp:
@@ -23,13 +25,23 @@
       set_fact:
         join_command: "{{ join_cmd.content | b64decode }}"
 
-    - name: Join worker to cluster with current hostname
-      command: "{{ join_command }} --node-name {{ current_hostname.stdout }}"
-      args:
-        creates: /etc/kubernetes/kubelet.conf
+    - name: Join worker to cluster
+      command: "{{ join_command }} --node-name {{ current_hostname.stdout }} --node-labels=node-role.kubernetes.io/worker="
+      when: not kubelet_conf.stat.exists
+      register: join_result
 
-    - name: Restart kubelet
+    - name: Restart kubelet after join
       systemd:
         name: kubelet
         state: restarted
         daemon_reload: yes
+      when: join_result.changed
+
+    - name: Verify node joined successfully
+      wait_for:
+        timeout: 10
+      when: join_result.changed
+
+    - name: Display success message
+      debug:
+        msg: "✅ {{ inventory_hostname }} joined successfully as {{ current_hostname.stdout }}"

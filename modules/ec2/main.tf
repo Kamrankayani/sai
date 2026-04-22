@@ -8,13 +8,12 @@ resource "aws_instance" "this" {
   key_name               = var.key_name
   
   # Dynamic user_data that sets unique hostname for each instance
-  user_data = base64encode(<<-EOT
+   user_data = <<-EOT
               #!/bin/bash
               HOSTNAME="${var.instance_name}-${count.index + 1}"
               hostnamectl set-hostname $HOSTNAME
               echo "Hostname set to: $HOSTNAME"
               EOT
-            )
   
   root_block_device {
     volume_type = "gp3"
