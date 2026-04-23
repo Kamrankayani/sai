@@ -1,0 +1,86 @@
+---
+- name: Install KubeVirt with software emulation
+  hosts: control_plane
+  become: true
+  
+  tasks:
+    - name: Install KubeVirt operator
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        export KUBEVIRT_VERSION=v1.1.0
+        kubectl create -f https://github.com/kubevirt/kubevirt/releases/download/${KUBEVIRT_VERSION}/kubevirt-operator.yaml
+      register: operator_install
+
+    - name: Wait for operator to be ready
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        kubectl wait --for=condition=Available --timeout=3m -n kubevirt deployment/virt-operator
+      ignore_errors: true
+
+    - name: Create KubeVirt CR
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        kubectl create -f https://github.com/kubevirt/kubevirt/releases/download/v1.1.0/kubevirt-cr.yaml
+      register: cr_create
+
+    - name: Enable software emulation mode
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        kubectl patch kubevirt kubevirt -n kubevirt --type merge -p '{"spec":{"configuration":{"developerConfiguration":{"useEmulation":true}}}}'
+      ignore_errors: true
+
+    - name: Wait for KubeVirt to be ready
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        sleep 30
+        kubectl wait --for=condition=Available --timeout=5m -n kubevirt kubevirt/kubevirt
+      ignore_errors: true
+
+    - name: Download virtctl
+      get_url:
+        url: https://github.com/kubevirt/kubevirt/releases/download/v1.1.0/virtctl-v1.1.0-linux-amd64
+        dest: /usr/local/bin/virtctl
+        mode: '0755'
+
+    - name: Create kubectl-virt plugin symlink
+      file:
+        src: /usr/local/bin/virtctl
+        dest: /usr/local/bin/kubectl-virt
+        state: link
+
+    - name: Verify virtctl installation
+      shell: virtctl version
+      register: virtctl_version
+      changed_when: false
+
+    - name: Display virtctl version
+      debug:
+        var: virtctl_version.stdout
+
+    - name: Check KubeVirt pods
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        kubectl get pods -n kubevirt
+      register: pod_status
+
+    - name: Display pod status
+      debug:
+        var: pod_status.stdout_lines
+
+    - name: Display final message
+      debug:
+        msg: |
+          ╔══════════════════════════════════════════╗
+          ║   KubeVirt Installed (Emulation Mode)   ║
+          ╠══════════════════════════════════════════╣
+          ║  virtctl: installed and ready           ║
+          ║  Status: Ready for VM deployment        ║
+          ║  Create VM: kubectl apply -f vm.yaml    ║
+          ║  Console: virtctl console <vm-name>     ║
+          ╚══════════════════════════════════════════╝

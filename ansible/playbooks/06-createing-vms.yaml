@@ -1,0 +1,72 @@
+---
+- name: Create Multiple KubeVirt Virtual Machines on Workers
+  hosts: control_plane
+  become: true
+  
+  vars:
+    vms:
+    - name: splunk-server
+      cpu: 1
+      memory: "1Gi"        
+      image: "quay.io/kubevirt/cirros-container-disk-demo"
+    - name: service-now-mid
+      cpu: 1
+      memory: "512Mi"      # Reduced from 2Gi
+      image: "quay.io/kubevirt/cirros-container-disk-demo"
+    - name: monitoring-tool
+      cpu: 1
+      memory: "512Mi"      # Reduced from 2Gi
+      image: "quay.io/kubevirt/cirros-container-disk-demo"
+  
+  tasks:
+    - name: Create VMs from list
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        
+        cat << 'YAML' | kubectl apply -f -
+        {% for vm in vms %}
+        ---
+        apiVersion: kubevirt.io/v1
+        kind: VirtualMachine
+        metadata:
+          name: {{ vm.name }}
+        spec:
+          running: true
+          template:
+            metadata:
+              labels:
+                kubevirt.io/vm: {{ vm.name }}
+            spec:
+              nodeSelector:
+                node-role.kubernetes.io/worker: ""
+              domain:
+                cpu:
+                  cores: {{ vm.cpu }}
+                resources:
+                  requests:
+                    memory: {{ vm.memory }}
+                devices:
+                  disks:
+                    - name: containerdisk
+                      disk:
+                        bus: virtio
+              volumes:
+                - name: containerdisk
+                  containerDisk:
+                    image: {{ vm.image }}
+        {% endfor %}
+        YAML
+      register: vms_created
+
+    - name: Display all VMs
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        kubectl get vm
+        kubectl get vmi -o wide
+      register: vm_list
+
+    - name: Show VM list
+      debug:
+        var: vm_list.stdout_lines

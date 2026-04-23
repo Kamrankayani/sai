@@ -26,7 +26,7 @@
         join_command: "{{ join_cmd.content | b64decode }}"
 
     - name: Join worker to cluster
-      command: "{{ join_command }} --node-name {{ current_hostname.stdout }} --node-labels=node-role.kubernetes.io/worker="
+      command: "{{ join_command }} --node-name {{ current_hostname.stdout }}"
       when: not kubelet_conf.stat.exists
       register: join_result
 
@@ -35,6 +35,14 @@
         name: kubelet
         state: restarted
         daemon_reload: yes
+      when: join_result.changed
+
+    - name: Add worker role label after join
+      become_user: ubuntu
+      shell: |
+        export KUBECONFIG=/home/ubuntu/.kube/config
+        kubectl label node {{ current_hostname.stdout }} node-role.kubernetes.io/worker= --overwrite
+      delegate_to: "{{ groups['control_plane'][0] }}"
       when: join_result.changed
 
     - name: Verify node joined successfully
